@@ -11,7 +11,7 @@ A Telegram bot that
 - Image generation via OpenAI DALL·E-3
 - Role-play responses driven by a custom `CHARACTER_DESCRIPTION`,
   you need customize with your words here and save in a txt file
-  and specify it's path in data.py
+  and specify it's path in data.py.
 
 ## Installation
 
