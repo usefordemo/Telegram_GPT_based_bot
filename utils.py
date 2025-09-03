@@ -3,12 +3,13 @@ from telegram import Update
 from telegram.ext import ContextTypes
 from openai import OpenAI
 import openai
-from config import OPENAI_API_KEY
+from API import OPENAI_API_KEY
 from datetime import datetime
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
-from data import TOPIC_MAP,CHARACTER_DESCRIPTION
+from data import TOPIC_MAP
+from openai import AsyncOpenAI
+openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
-def analyze_emotion_with_chatgpt(text: str) -> str:
+async def analyze_emotion_with_chatgpt(text: str) -> str:
     """
     Uses OpenAI's API to analyze the given text and returns a single emotion label
     (e.g., happy, sad, neutral, angry, surprised).
@@ -19,7 +20,7 @@ def analyze_emotion_with_chatgpt(text: str) -> str:
         "without any additional text."
     )
     user_prompt = f"Text: \"{text}\""
-    response = openai_client.chat.completions.create(
+    response = await openai_client.chat.completions.create(
         model="gpt-4o",
         messages=[
             {"role": "system", "content": system_prompt},
@@ -30,21 +31,46 @@ def analyze_emotion_with_chatgpt(text: str) -> str:
     emotion = response.choices[0].message.content.strip().lower()
     return emotion
 
+async def log_sticker(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message.sticker:
+        print("Sticker file ID:", update.message.sticker.file_id)
 
 def is_image_request_keyword(message: str) -> bool:
     keywords = ["generate image", "draw", "create image", "sketch", "picture"]
     return any(keyword in message.lower() for keyword in keywords)
 
-def detect_lang(text: str) -> str:
-    """
-    超轻量 – 只分中文 / 日文 / 其它
-    """
-    if re.search(r'[\u4e00-\u9fff]', text):
-        return "zh"
-    if re.search(r'[\u3040-\u30ff]', text):
-        return "ja"
-    return "en"
+async def detect_lang(text: str) -> str:
+    system_prompt = (
+        "You are an expert in language analysis. Please analyze the following text and determine which language is"
+        "the emotion expressed. Return only one language label"
+        "without any additional text. eg 'ar','de','en','es','fr','he','it','nl','no','pt','ru','sv','ud','zh'"
+    )
+    user_prompt = f"Text: \"{text}\""
+    response = await openai_client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        temperature=0
+    )
+    language = response.choices[0].message.content.strip().lower()
+    return language
 
+def log_message(user_id, username, text):
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if not os.path.exists("logs"):
+        os.makedirs("logs")
+    filename = username if username else f"Prof_{user_id}"
+    filepath = f"logs/{filename}.txt"
+    # Print the log file location
+    print(f"Logging message to: {filepath}")
+
+    try:
+        with open(filepath, 'a', encoding='utf-8') as file:
+            file.write(f"{current_time} - {text}\n")
+    except Exception as e:
+        print(f"Failed to write to log file: {e}")
 
 def extract_image_size(prompt: str, default_size: str = "1024x1024") -> str:
     """
@@ -62,7 +88,7 @@ def extract_image_size(prompt: str, default_size: str = "1024x1024") -> str:
         return size_str
     return default_size
 
-async def is_image_request(message):
+async def is_image_request(message: str) -> bool:
     if not message:
         return False
     # First try a direct keyword check
@@ -70,7 +96,7 @@ async def is_image_request(message):
         return True
     # Fallback to GPT detection
     try:
-        response = openai_client.chat.completions.create(
+        response = await openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "Answer only 'yes' or 'no'. "
@@ -88,22 +114,23 @@ async def is_image_request(message):
 def is_direct_reply_or_mention(update: Update,
                                context: ContextTypes.DEFAULT_TYPE) -> bool:
     """
-    ▸ True  ⇢  是“需要立即响应”的群聊消息
-       1. 对 Bot 的直接回复
-       2. 文本中显式出现 @BotUsername
+    ▸ True ⇢ Group chat message that "requires immediate response"
+    1. Direct reply to the bot
+    2. @BotUsername explicitly appears in the text
     """
+
     if not update.message:
         return False
 
     text         = (update.message.text or "").lower()
     bot_username = f"@{(context.bot.username or '').lower()}"
 
-    # 1️⃣ 回复 Bot
+    # reply Bot
     if (update.message.reply_to_message and
         update.message.reply_to_message.from_user.id == context.bot.id):
         return True
 
-    # 2️⃣ @提及
+    # mention
     return bot_username and bot_username in text
 
 def parse_time_window(text: str) -> tuple[str, str]:
@@ -115,12 +142,12 @@ def parse_time_window(text: str) -> tuple[str, str]:
     """
     text = text.lower()
     today = date.today()
-    if "week" in text or "这周" in text:
+    if "week" in text:
         start = today - timedelta(days=today.weekday())
-    elif "yesterday" in text or "昨天" in text:
+    elif "yesterday" in text:
         start = today - timedelta(days=1)
         today = start
-    elif "last week" in text or "上周" in text:
+    elif "last week" in text:
         start = today - timedelta(days=today.weekday()+7)
         today = start + timedelta(days=6)
     else:  # default -> today
@@ -129,36 +156,21 @@ def parse_time_window(text: str) -> tuple[str, str]:
 
 
 def parse_news_topic(msg: str) -> tuple[str, str] | None:
-    """
-    从用户消息里提取 (topic_key, period)
+    '''
+    Extract (topic_key, period) from user messages
     period: "day" | "week" | "month"
-    支持：
-      • 中文：今日/今天 / 今周/本周 / 今月/本月 XX 新闻
-      • 英文：today / this week / this month XX news
-    """
+    Supports:
+    • English: Today / This week / This month XX news
+    '''
     txt = msg.strip().lower()
 
-    # ====== 定义 period 关键词 ======
-    zh_map = {
-        "今日": "day", "今天": "day",
-        "今周": "week", "本周": "week", "这周": "week",
-        "今月": "month", "本月": "month", "这个月": "month",
-    }
+    # period kew words
     en_map = {
         "today": "day", "today's": "day",
         "this week": "week", "thisweek": "week",
         "this month": "month", "thismonth": "month",
     }
 
-    # ① 中文匹配
-    zh_pat = r"(" + "|".join(map(re.escape, zh_map.keys())) + r")\s*([\u4e00-\u9fff]+?)\s*新闻"
-    m = re.search(zh_pat, msg, re.I)
-    if m:
-        period = zh_map[m.group(1)]
-        topic  = m.group(2)
-        return (topic, period) if topic in TOPIC_MAP else None
-
-    # ② 英文匹配
     en_pat = r"(" + "|".join(en_map.keys()) + r")\s*([a-z ]+?)\s*news"
     m = re.search(en_pat, txt)
     if m:
@@ -170,21 +182,37 @@ def parse_news_topic(msg: str) -> tuple[str, str] | None:
 
 
 #classify user intent
-def classify_intent(question: str) -> str:
+async def classify_intent(question: str) -> str:
     prompt = (
         "You are a router. Decide whether the user's question "
-        "should be answered directly (label: chat) or requires "
+        "should be answered directly or directly comment news(label: chat) or requires "
         "fetching FRESH NEWS (label: news).\n"
         "Return only 'news' or 'chat'.\n\n"
         "### Examples\n"
-        "User: 今天科技新闻\nAssistant: news\n"
+        "User: Today's technology news\nAssistant: news\n"
         "User: what happened in asia today?\nAssistant: news\n"
-        "User: 请问你是谁\nAssistant: chat\n"
-        "User: 今周军事新闻\nAssistant: news\n"
-        "### End\n\n"
+        "User: may I ask who you are\nAssistant: chat\n"
+        "User: This week's military news\nAssistant: news\n"
+        "User: See the warning?\nAssistant: chat\n"
+        "User: {Trump said he has already found a buyer for TikTok."
+        "U.S. President Donald Trump told Fox News in an interview,"
+        "that a buyer had been found for the short-video sharing platform TikTok."
+        "He described them as a group of very wealthy people,"
+        "and said he would announce the buyers' names in about two weeks."
+        "Earlier this month, Trump signed an executive order,"
+        "once again extending the deadline for China’s ByteDance"
+        "to sell its TikTok U.S. operations by 90 days, until September 17."
+        "TikTok at the time issued a statement thanking Trump"
+        "for his leadership and support in ensuring that TikTok remained available."
+        "In Beijing, China’s Ministry of Foreign Affairs responded last month"
+        "to questions regarding TikTok, saying that China would handle the matter"
+        "in accordance with its own laws and regulations,"
+        "and that the U.S. should provide an open, fair, just,"
+        "and non-discriminatory business environment for Chinese companies operating in the U.S."
+        "— RTHK, Bloomberg, Forbes News}\nAssistant: chat\n"
         f"User: {question}"
     )
-    resp = openai_client.chat.completions.create(
+    resp = await openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0

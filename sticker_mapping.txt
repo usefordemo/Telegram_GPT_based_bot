@@ -1,0 +1,20 @@
+{
+    "happy": "your_stick_token",
+    "sad": "your_stick_token",
+    "neutral": "your_stick_token",
+    "angry": "your_stick_token",
+    "surprised": "your_stick_token",
+    "amused": "your_stick_token",
+    "playful": "your_stick_token",
+    "speechless": "your_stick_token",
+    "excited": "your_stick_token",
+    "shyness": "your_stick_token",
+    "sarcastic": "your_stick_token",
+    "cynical": "your_stick_token",
+    "frustrated": "your_stick_token",
+    "concerned": "your_stick_token",
+    "ironic": "your_stick_token",
+    "pround": "your_stick_token",
+    "hurt": "your_stick_token",
+    "apologetic": "your_stick_token"
+}
