@@ -47,7 +47,6 @@ from data import (
     QUANT_ANALYST_PROMPT,
 )
 from utils import (
-    log_message,
     detect_lang,
     classify_intent,
     is_direct_reply_or_mention,
@@ -598,9 +597,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception:
         pass
 
-    # Logging
-    log_message(user_id, username, f"User: {user_input}")
-    log_message(user_id, username, f"Bot: {reply_text}")
 
 # --------------------------------------------------------------------------------------
 # Commands
@@ -779,5 +775,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
