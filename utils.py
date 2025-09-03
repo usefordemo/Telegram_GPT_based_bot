@@ -57,20 +57,6 @@ async def detect_lang(text: str) -> str:
     language = response.choices[0].message.content.strip().lower()
     return language
 
-def log_message(user_id, username, text):
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    if not os.path.exists("logs"):
-        os.makedirs("logs")
-    filename = username if username else f"Prof_{user_id}"
-    filepath = f"logs/{filename}.txt"
-    # Print the log file location
-    print(f"Logging message to: {filepath}")
-
-    try:
-        with open(filepath, 'a', encoding='utf-8') as file:
-            file.write(f"{current_time} - {text}\n")
-    except Exception as e:
-        print(f"Failed to write to log file: {e}")
 
 def extract_image_size(prompt: str, default_size: str = "1024x1024") -> str:
     """
@@ -217,4 +203,5 @@ async def classify_intent(question: str) -> str:
         messages=[{"role": "user", "content": prompt}],
         temperature=0
     )
+
     return resp.choices[0].message.content.strip().lower()
